@@ -17,7 +17,7 @@ if not required.issubset(df.columns):
     raise RuntimeError(f"В input.xlsx должны быть колонки: {required}")
 
 
-# Чтение эталона
+# --- Чтение эталонных текстов ---
 def load_ref(id_):
     path = os.path.join(REF_DIR, f"{id_}.txt")
     return open(path, encoding="utf-8").read() if os.path.exists(path) else ""
@@ -26,7 +26,7 @@ def load_ref(id_):
 df["reference_text"] = df["id"].apply(load_ref)
 
 
-# Функция сравнения
+# --- Функция сравнения текстов ---
 def compare_texts(ref: str, ext: str):
     rw, ew = ref.split(), ext.split()
     completeness = round(difflib.SequenceMatcher(None, rw, ew).ratio() * 100, 1)
@@ -58,7 +58,7 @@ def compare_texts(ref: str, ext: str):
     return completeness, sig
 
 
-# --- Основной расчёт ---
+# --- Расчёт метрик ---
 metrics = df.apply(lambda r: compare_texts(r["reference_text"], r["lib_text"]), axis=1)
 df[["completeness", "lost_significance"]] = pd.DataFrame(
     metrics.tolist(), index=df.index
@@ -66,9 +66,35 @@ df[["completeness", "lost_significance"]] = pd.DataFrame(
 
 df["ref_len"] = df["reference_text"].str.split().apply(len)
 df["ext_len"] = df["lib_text"].str.split().apply(len)
-df["comments"] = ""
 
-# Сохранение
+
+# --- Генерация комментариев ---
+def make_comment(row):
+    comp = row["completeness"]
+    sig = row["lost_significance"]
+
+    # Базовая часть по значимости потерянного
+    if sig == "высокая":
+        base = "Пропущены ключевые предложения, требуется доработка парсинга лидов и цитат."
+    elif sig == "средняя":
+        base = "Пропущены отдельные важные фразы, можно добавить расширенные CSS‑селекторы."
+    else:
+        base = "Потери незначительны, алгоритм работает корректно."
+
+    # Уточнение по полноте
+    if comp < 50:
+        extra = " Низкая полнота (<50%), проверить выбор корневого контейнера."
+    elif comp < 80:
+        extra = " Средняя полнота (50–80%), обратить внимание на теги <article>, <div>."
+    else:
+        extra = " Общая полнота высокая (≥80%)."
+
+    return base + extra
+
+
+df["comments"] = df.apply(make_comment, axis=1)
+
+# --- Сохранение результата ---
 cols = [
     "id",
     "ref_len",
